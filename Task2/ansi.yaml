@@ -1,0 +1,57 @@
+---
+# Ansible Playbook in YAML format
+- name: Perform Actions Based on Provided Variable
+  hosts: all
+  become: yes
+  gather_facts: yes
+  vars:
+    action: "{{ action | default('check-status') }}"
+
+  tasks:
+    - name: Verify Installation of Services
+      block:
+        - name: Check if httpd is installed
+          stat:
+            path: '/usr/sbin/httpd'
+          register: httpd_installed
+
+        - name: Install httpd if not installed
+          yum:
+            name: httpd
+            state: present
+          when: httpd_installed.stat.exists == False
+      when: action == "verify_install"
+
+    - name: Check Disk Usage
+      block:
+        - name: Get Disk Space Information
+          command: df -h
+          register: disk_space_output
+
+        - name: Check Disk Usage and Send Email Alert if > 80%
+          debug:
+            msg: 'Disk usage alert! {{ item.filesystem }} is at {{ item.pcent }}'
+          when: 'item.pcent | int > 80'
+          loop: '{{ disk_space_output.stdout_lines[1:] }}'
+          notify: send_email_alert
+      when: action == "check-disk"
+
+    - name: Check Application Status
+      block:
+        - name: Get Application Status
+          uri:
+            url: https://localhost:8000/api/v1/healthcheck"
+            method: GET
+          register: application_status
+
+        - name: Display Application Status
+          debug:
+            msg: '{{ application_status.json }}'
+
+        - name: Get List of Down Services
+          uri:
+            url: https://localhost:8000/api/v1/healthcheck"
+            method: GET
+          register: down_services
+          failed_when: 'down_services.status != 404'
+      when: action == "check-status"
